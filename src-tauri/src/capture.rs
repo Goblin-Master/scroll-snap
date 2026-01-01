@@ -166,10 +166,10 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
     
     // Find the monitor that contains the point (x, y)
     let monitor = monitors.iter().find(|m| {
-        let mx = m.x();
-        let my = m.y();
-        let mw = m.width();
-        let mh = m.height();
+        let mx = m.x().unwrap_or(0);
+        let my = m.y().unwrap_or(0);
+        let mw = m.width().unwrap_or(0);
+        let mh = m.height().unwrap_or(0);
         
         // Check if the center of the rect is within this monitor
         let cx = x + (width as i32 / 2);
@@ -183,8 +183,8 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
     let border_offset = 2;
     
     // Calculate relative coordinates within the monitor
-    let rx = x - monitor.x() + border_offset;
-    let ry = y - monitor.y() + border_offset;
+    let rx = x - monitor.x().unwrap_or(0) + border_offset;
+    let ry = y - monitor.y().unwrap_or(0) + border_offset;
     
     // Adjust width/height for the offset
     // Ensure we don't go negative or out of bounds
