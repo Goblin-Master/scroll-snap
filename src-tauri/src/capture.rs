@@ -19,17 +19,16 @@ lazy_static! {
 pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
     println!("Starting manual scroll capture task at ({}, {}) {}x{}", x, y, width, height);
     
-    // Force hide ALL windows to ensure input is not blocked
-    // Iterate over all windows and hide them
+    // Instead of hiding, we set ignore cursor events to true
+    // This allows the window to remain visible (showing the green border) but let clicks pass through
     let windows = app.webview_windows();
     for (label, window) in windows {
-        println!("Hiding window: {}", label);
-        let _ = window.hide();
+        println!("Setting ignore cursor events for window: {}", label);
+        let _ = window.set_ignore_cursor_events(true);
     }
     
-    // Give the window manager some time to actually hide the window and release focus
-    // This is crucial for input passthrough to work immediately
-    thread::sleep(Duration::from_millis(500));
+    // Give the window manager some time to update
+    thread::sleep(Duration::from_millis(200));
 
     // Create a stop flag for this capture session
     let stop_flag = Arc::new(Mutex::new(false));
@@ -206,10 +205,11 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
     // Convert to Base64
     let base64_img = image_to_base64(&full_image).map_err(|e| e.to_string())?;
     
-    // Show ALL windows before emitting event
+    // Re-enable cursor events for ALL windows before showing them
     let windows = app.webview_windows();
     for (label, window) in windows {
-        println!("Showing window: {}", label);
+        println!("Restoring cursor events for window: {}", label);
+        let _ = window.set_ignore_cursor_events(false);
         let _ = window.show();
         let _ = window.set_focus();
     }
