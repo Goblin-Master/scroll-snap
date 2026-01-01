@@ -153,8 +153,11 @@ export const Overlay = () => {
             }}
         >
             {isProcessing && (
-                <div className="absolute -top-12 left-0 bg-green-600 text-white px-3 py-1 rounded shadow-md text-xs font-bold flex items-center gap-2">
-                    <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"/>
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-zinc-900/90 text-white px-4 py-2 rounded-lg shadow-xl border border-zinc-700 text-sm font-medium flex items-center gap-3 z-50">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
                     正在录制... 按 Esc 停止
                 </div>
             )}

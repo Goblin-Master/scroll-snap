@@ -48,10 +48,13 @@ pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, he
                 println!("Esc detected via rdev, stopping capture...");
                 let mut stop = stop_flag_listener.lock().unwrap();
                 *stop = true;
+                // Force exit the process if needed? No, let the loop break gracefully.
             }
         };
         
         // This will block until error
+        // Note: rdev listen loop is blocking.
+        // We run it in a thread so it doesn't block the UI or capture loop.
         if let Err(error) = listen(callback) {
             println!("Error: {:?}", error);
         }
@@ -81,11 +84,14 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
-    // Hide window briefly to ensure we capture the underlying content cleanly
-    toggle_window_visibility(app, false);
-    thread::sleep(Duration::from_millis(50));
-    let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
-    toggle_window_visibility(app, true);
+    // Shrink the capture area slightly (2px on each side) to avoid capturing the green border
+    let border_offset = 2;
+    let safe_x = x + border_offset;
+    let safe_y = y + border_offset;
+    let safe_width = if width > (border_offset as u32 * 2) { width - (border_offset as u32 * 2) } else { width };
+    let safe_height = if height > (border_offset as u32 * 2) { height - (border_offset as u32 * 2) } else { height };
+
+    let mut full_image = capture_rect(safe_x, safe_y, safe_width, safe_height).map_err(|e| e.to_string())?;
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -112,19 +118,14 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
-        // Hide window briefly to ensure we capture the underlying content cleanly
-        toggle_window_visibility(app, false);
-        // Wait a tiny bit for the window to actually hide from the compositor
-        thread::sleep(Duration::from_millis(50)); 
-        let new_fragment = match capture_rect(x, y, width, height) {
+        // We capture without hiding the window, because we are capturing inside the border
+        let new_fragment = match capture_rect(safe_x, safe_y, safe_width, safe_height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
-                toggle_window_visibility(app, true);
                 break;
             }
         };
-        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
