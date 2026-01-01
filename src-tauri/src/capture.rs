@@ -18,6 +18,11 @@ lazy_static! {
 pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
     println!("Starting manual scroll capture task at ({}, {}) {}x{}", x, y, width, height);
     
+    // Force hide the main window to ensure it doesn't block input
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+
     // Create a stop flag for this capture session
     let stop_flag = Arc::new(Mutex::new(false));
     let stop_flag_clone = stop_flag.clone();
