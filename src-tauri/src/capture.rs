@@ -62,8 +62,12 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
-    // With xcap, let's try WITHOUT hiding window first, but still using the shrunk area
+    // Hide window briefly to ensure we capture the underlying content cleanly
+    // This is crucial for Windows/Linux compositors to expose the bottom layer
+    toggle_window_visibility(app, false);
+    thread::sleep(Duration::from_millis(10));
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
+    toggle_window_visibility(app, true);
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -100,14 +104,18 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
-        // We capture without hiding the window, because we are capturing inside the border
+        // Hide window briefly to ensure we capture the underlying content cleanly
+        toggle_window_visibility(app, false);
+        thread::sleep(Duration::from_millis(10));
         let new_fragment = match capture_rect(x, y, width, height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
+                toggle_window_visibility(app, true);
                 break;
             }
         };
+        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
