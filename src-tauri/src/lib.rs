@@ -1,4 +1,4 @@
-use tauri::Builder;
+use tauri::Manager;
 
 pub mod capture;
 pub mod stitch;

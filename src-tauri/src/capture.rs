@@ -1,5 +1,5 @@
 use xcap::Monitor;
-use image::{DynamicImage, ImageOutputFormat};
+use image::{DynamicImage, ImageFormat};
 use std::thread;
 use std::time::Duration;
 use std::io::Cursor;
@@ -221,7 +221,7 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
 
 fn image_to_base64(img: &DynamicImage) -> Result<String, String> {
     let mut buf = Cursor::new(Vec::new());
-    img.write_to(&mut buf, ImageOutputFormat::Png)
+    img.write_to(&mut buf, ImageFormat::Png)
         .map_err(|e| format!("Failed to encode image: {}", e))?;
         
     let res_base64 = general_purpose::STANDARD.encode(buf.into_inner());
