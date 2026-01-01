@@ -18,10 +18,17 @@ lazy_static! {
 pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
     println!("Starting manual scroll capture task at ({}, {}) {}x{}", x, y, width, height);
     
-    // Force hide the main window to ensure it doesn't block input
-    if let Some(window) = app.get_webview_window("main") {
+    // Force hide ALL windows to ensure input is not blocked
+    // Iterate over all windows and hide them
+    let windows = app.webview_windows();
+    for (label, window) in windows {
+        println!("Hiding window: {}", label);
         let _ = window.hide();
     }
+    
+    // Give the window manager some time to actually hide the window and release focus
+    // This is crucial for input passthrough to work immediately
+    thread::sleep(Duration::from_millis(500));
 
     // Create a stop flag for this capture session
     let stop_flag = Arc::new(Mutex::new(false));

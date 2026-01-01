@@ -199,12 +199,7 @@ export const Overlay = () => {
         };
         
         // Call backend
-        // We hide the window completely to ensure click-through works on all platforms
-        // Backend will re-show it when done
-        if ((window as any).__TAURI_INTERNALS__) {
-             await appWindow.hide();
-        }
-        
+        // Backend will handle hiding the window to ensure it's synced with capture start
         await invoke('start_scroll_capture', captureRect);
         
       } catch (e) {
