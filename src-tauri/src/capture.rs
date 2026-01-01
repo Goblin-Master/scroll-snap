@@ -132,6 +132,14 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
     // Convert to Base64
     let base64_img = image_to_base64(&full_image).map_err(|e| e.to_string())?;
     
+    // Show ALL windows before emitting event
+    let windows = app.webview_windows();
+    for (label, window) in windows {
+        println!("Showing window: {}", label);
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+
     // Emit event with result
     app.emit("capture-complete", base64_img).map_err(|e| e.to_string())?;
     
