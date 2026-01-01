@@ -157,27 +157,28 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
     let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
     
     // Find the screen that contains the point (x, y)
+    // We assume x, y are Global Physical Coordinates
     let screen = screens.iter().find(|s| {
         let sx = s.display_info.x;
         let sy = s.display_info.y;
         let sw = s.display_info.width;
         let sh = s.display_info.height;
         
+        // Check if the center of the rect is within this screen
         let cx = x + (width as i32 / 2);
         let cy = y + (height as i32 / 2);
         
         cx >= sx && cx < sx + sw as i32 && cy >= sy && cy < sy + sh as i32
     }).or(screens.first()).ok_or("No screen found")?;
 
-    let scale = screen.display_info.scale_factor;
+    // Calculate relative coordinates within the screen
+    // Since x, y are already physical, we just subtract the screen's physical origin
+    let rx = x - screen.display_info.x;
+    let ry = y - screen.display_info.y;
     
-    let rx_logical = x - screen.display_info.x;
-    let ry_logical = y - screen.display_info.y;
-
-    let rx = (rx_logical as f32 * scale) as i32;
-    let ry = (ry_logical as f32 * scale) as i32;
-    let rw = (width as f32 * scale) as u32;
-    let rh = (height as f32 * scale) as u32;
+    // Width and height are also physical
+    let rw = width;
+    let rh = height;
 
     let image = screen.capture_area(rx, ry, rw, rh)
         .map_err(|e| format!("Failed to capture area: {}", e))?;

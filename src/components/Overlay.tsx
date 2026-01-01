@@ -99,12 +99,21 @@ export const Overlay = () => {
              return;
         }
         
+        // Calculate physical coordinates
+        const dpr = window.devicePixelRatio || 1;
+        
+        // selection.sx/sy are e.screenX/Y (Logical global coordinates usually)
+        // converting them to physical is tricky across browsers/OS
+        // But multiplying by DPR is the standard way to get physical pixels from logical CSS pixels
+        
         const captureRect = {
-            x: Math.round(selection.sx),
-            y: Math.round(selection.sy),
-            width: Math.round(selection.w),
-            height: Math.round(selection.h)
+            x: Math.round(selection.sx * dpr),
+            y: Math.round(selection.sy * dpr),
+            width: Math.round(selection.w * dpr),
+            height: Math.round(selection.h * dpr)
         };
+        
+        console.log(`Capture Rect (Physical): ${JSON.stringify(captureRect)}, DPR: ${dpr}`);
         
         // Call backend
         // Backend will handle hiding the window to ensure it's synced with capture start
