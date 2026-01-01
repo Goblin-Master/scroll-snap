@@ -94,11 +94,10 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         // Check for static content (identical image)
         if overlap_index == new_fragment.height() - 1 {
             static_count += 1;
-            // Removed automatic timeout stop, user must stop manually (or we keep max limit)
-            // But let's keep it just in case user forgets
-            if static_count >= max_static_count * 2 { // Increased timeout to 6s
-                 // Don't break automatically, just wait? 
-                 // Or maybe break if it's REALLY long.
+            // Stop if static for 3 seconds
+            if static_count >= max_static_count {
+                 println!("Static content detected for 3s. Auto-stopping.");
+                 break;
             }
             continue;
         }
@@ -106,6 +105,10 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         // Check for no overlap (too fast or error)
         if overlap_index == 0 {
              static_count += 1;
+             if static_count >= max_static_count {
+                 println!("No overlap detected for 3s. Auto-stopping.");
+                 break;
+             }
              continue;
         }
         

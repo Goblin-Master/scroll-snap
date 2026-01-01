@@ -198,13 +198,13 @@ export const Overlay = () => {
             height: Math.round(selection.h)
         };
         
-        // Make window click-through so user can scroll
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // Call backend
+        // We hide the window completely to ensure click-through works on all platforms
+        // Backend will re-show it when done
         if ((window as any).__TAURI_INTERNALS__) {
-            await appWindow.setIgnoreCursorEvents(true);
+             await appWindow.hide();
         }
         
-        // Call backend
         await invoke('start_scroll_capture', captureRect);
         
       } catch (e) {
