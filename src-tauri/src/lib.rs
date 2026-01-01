@@ -1,3 +1,5 @@
+use tauri::Builder;
+
 pub mod capture;
 pub mod stitch;
 pub mod utils;
@@ -15,6 +17,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet, 
             capture::start_scroll_capture,
+            capture::stop_scroll_capture,
             utils::copy_to_clipboard
         ])
         .run(tauri::generate_context!())

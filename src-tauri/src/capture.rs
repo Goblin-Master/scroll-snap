@@ -7,13 +7,30 @@ use base64::{Engine as _, engine::general_purpose};
 use crate::stitch;
 use tauri::{AppHandle, Emitter};
 
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use tauri::{AppHandle, Emitter, Manager};
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref CAPTURE_STATES: Mutex<HashMap<String, Arc<Mutex<bool>>>> = Mutex::new(HashMap::new());
+}
+
 #[tauri::command]
 pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
     println!("Starting manual scroll capture task at ({}, {}) {}x{}", x, y, width, height);
     
+    // Create a stop flag for this capture session
+    let stop_flag = Arc::new(Mutex::new(false));
+    let stop_flag_clone = stop_flag.clone();
+    
+    // Store it so we can access it from stop command
+    // We use a simple key "current" since we only allow one capture at a time
+    CAPTURE_STATES.lock().unwrap().insert("current".to_string(), stop_flag);
+
     // Spawn a thread to handle the long-running capture process
     std::thread::spawn(move || {
-        let result = run_capture_loop(&app, x, y, width, height);
+        let result = run_capture_loop(&app, x, y, width, height, stop_flag_clone);
         if let Err(e) = result {
             println!("Capture loop error: {}", e);
             let _ = app.emit("capture-error", e);
@@ -23,7 +40,17 @@ pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, he
     Ok(())
 }
 
-fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32) -> Result<(), String> {
+#[tauri::command]
+pub async fn stop_scroll_capture() -> Result<(), String> {
+    println!("Stopping capture...");
+    if let Some(flag) = CAPTURE_STATES.lock().unwrap().get("current") {
+        let mut stop = flag.lock().unwrap();
+        *stop = true;
+    }
+    Ok(())
+}
+
+fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
     
@@ -37,6 +64,15 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32) ->
     println!("Entering capture loop. Please scroll manually.");
 
     loop {
+        // Check stop flag
+        {
+            let stop = stop_flag.lock().unwrap();
+            if *stop {
+                println!("Stop flag detected. Finishing capture.");
+                break;
+            }
+        }
+
         if stitch_count >= max_stitches {
             println!("Reached max stitches limit.");
             break;
@@ -60,9 +96,11 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32) ->
         // Check for static content (identical image)
         if overlap_index == new_fragment.height() - 1 {
             static_count += 1;
-            if static_count >= max_static_count {
-                println!("Static content detected for {}s. Stopping.", max_static_count as f32 * 0.1);
-                break;
+            // Removed automatic timeout stop, user must stop manually (or we keep max limit)
+            // But let's keep it just in case user forgets
+            if static_count >= max_static_count * 2 { // Increased timeout to 6s
+                 // Don't break automatically, just wait? 
+                 // Or maybe break if it's REALLY long.
             }
             continue;
         }
@@ -70,9 +108,6 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32) ->
         // Check for no overlap (too fast or error)
         if overlap_index == 0 {
              static_count += 1;
-             if static_count >= max_static_count {
-                break;
-             }
              continue;
         }
         
