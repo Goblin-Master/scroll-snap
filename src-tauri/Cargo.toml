@@ -1,0 +1,25 @@
+[package]
+name = "scroll-snap"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "scroll_snap_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+screenshots = "0.8"
+enigo = "0.2"
+image = "0.24"
+base64 = "0.21"
+arboard = "3.2"
+tokio = { version = "1", features = ["full"] }
