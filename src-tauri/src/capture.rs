@@ -9,7 +9,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use lazy_static::lazy_static;
-// use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState}; // Removed
+use device_query::{DeviceQuery, DeviceState, Keycode};
 
 lazy_static! {
     static ref CAPTURE_STATES: Mutex<HashMap<String, Arc<Mutex<bool>>>> = Mutex::new(HashMap::new());
@@ -38,28 +38,6 @@ pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, he
     // We use a simple key "current" since we only allow one capture at a time
     CAPTURE_STATES.lock().unwrap().insert("current".to_string(), stop_flag);
     
-    // Start listening for F9 using rdev in a separate thread
-    let stop_flag_listener = stop_flag_clone.clone();
-    std::thread::spawn(move || {
-        use rdev::{listen, Event, EventType, Key};
-        
-        let callback = move |event: Event| {
-            if let EventType::KeyPress(Key::Escape) = event.event_type {
-                println!("Esc detected via rdev, stopping capture...");
-                let mut stop = stop_flag_listener.lock().unwrap();
-                *stop = true;
-                // Force exit the process if needed? No, let the loop break gracefully.
-            }
-        };
-        
-        // This will block until error
-        // Note: rdev listen loop is blocking.
-        // We run it in a thread so it doesn't block the UI or capture loop.
-        if let Err(error) = listen(callback) {
-            println!("Error: {:?}", error);
-        }
-    });
-
     // Spawn a thread to handle the long-running capture process
     std::thread::spawn(move || {
         let result = run_capture_loop(&app, x, y, width, height, stop_flag_clone);
@@ -98,9 +76,19 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
     let mut stitch_count = 0;
 
     println!("Entering capture loop. Please scroll manually.");
+    
+    // Initialize device query state
+    let device_state = DeviceState::new();
 
     loop {
-        // Check stop flag
+        // Check stop flag from shortcut polling
+        let keys: Vec<Keycode> = device_state.get_keys();
+        if keys.contains(&Keycode::Escape) {
+             println!("Escape key detected via polling. Stopping capture.");
+             break;
+        }
+
+        // Check stop flag from command
         {
             let stop = stop_flag.lock().unwrap();
             if *stop {
