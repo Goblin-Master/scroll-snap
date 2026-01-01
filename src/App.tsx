@@ -32,7 +32,9 @@ function App() {
       </button>
 
       <div className="text-sm text-zinc-500 max-w-xs text-center">
-        Click start, drag to select an area, and wait for the scrolling to finish.
+        Click start, drag to select an area.<br/>
+        Scroll freely to capture.<br/>
+        <span className="font-bold text-indigo-400">Press Esc to stop.</span>
       </div>
     </div>
   );

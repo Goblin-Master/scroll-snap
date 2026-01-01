@@ -155,7 +155,7 @@ export const Overlay = () => {
             {isProcessing && (
                 <div className="absolute -top-12 left-0 bg-green-600 text-white px-3 py-1 rounded shadow-md text-xs font-bold flex items-center gap-2">
                     <span className="w-2 h-2 bg-red-500 rounded-full animate-ping"/>
-                    正在录制... 停止滚动 3秒 自动结束
+                    正在录制... 按 Esc 停止
                 </div>
             )}
         </div>

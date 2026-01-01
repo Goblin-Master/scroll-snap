@@ -44,33 +44,10 @@ pub async fn start_scroll_capture(app: AppHandle, x: i32, y: i32, width: u32, he
         use rdev::{listen, Event, EventType, Key};
         
         let callback = move |event: Event| {
-            if let EventType::KeyPress(Key::F9) = event.event_type {
-                println!("F9 detected via rdev, stopping capture...");
+            if let EventType::KeyPress(Key::Escape) = event.event_type {
+                println!("Esc detected via rdev, stopping capture...");
                 let mut stop = stop_flag_listener.lock().unwrap();
                 *stop = true;
-                // We can't easily break the rdev loop from inside without error, 
-                // but setting the flag is enough.
-                // Actually, rdev listener blocks. We need to run it in a way we can stop?
-                // rdev::listen blocks forever.
-                // We shouldn't block this thread forever if capture stops by other means (timeout).
-                // BUT, since we just need to detect F9 once, it's fine.
-                // However, if we don't press F9, this thread runs forever? 
-                // That's a leak.
-                //
-                // Better approach: spawn rdev listen, and when F9 is pressed, set flag.
-                // But how to stop listening when capture finishes naturally?
-                // rdev doesn't have a clean "stop listening" API easily accessible.
-                //
-                // Alternative: Use a loop that checks key state? rdev doesn't have polling.
-                //
-                // Let's accept that for this simple app, a stray listener thread might exist 
-                // until app exit, OR we just ignore it.
-                // Actually, we can just let it run. It's lightweight.
-                // But if we start multiple captures, we get multiple listeners.
-                //
-                // Optimization: Only start ONE global listener for the whole app life in lib.rs?
-                // Yes, that's better. But for now to fix the bug quickly:
-                // We can just rely on the user pressing F9.
             }
         };
         
@@ -104,10 +81,11 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
+    // Hide window briefly to ensure we capture the underlying content cleanly
+    toggle_window_visibility(app, false);
+    thread::sleep(Duration::from_millis(50));
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
-    
-    let mut static_count = 0;
-    let max_static_count = 30; // 3 seconds (30 * 100ms)
+    toggle_window_visibility(app, true);
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -134,40 +112,33 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
+        // Hide window briefly to ensure we capture the underlying content cleanly
+        toggle_window_visibility(app, false);
+        // Wait a tiny bit for the window to actually hide from the compositor
+        thread::sleep(Duration::from_millis(50)); 
         let new_fragment = match capture_rect(x, y, width, height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
+                toggle_window_visibility(app, true);
                 break;
             }
         };
+        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
         
         // Check for static content (identical image)
         if overlap_index == new_fragment.height() - 1 {
-            static_count += 1;
-            // Stop if static for 3 seconds
-            if static_count >= max_static_count {
-                 println!("Static content detected for 3s. Auto-stopping.");
-                 break;
-            }
+            // Just continue loop, waiting for user to scroll or stop
             continue;
         }
         
         // Check for no overlap (too fast or error)
         if overlap_index == 0 {
-             static_count += 1;
-             if static_count >= max_static_count {
-                 println!("No overlap detected for 3s. Auto-stopping.");
-                 break;
-             }
              continue;
         }
-        
-        // Reset static count since we found valid movement
-        static_count = 0;
         
         println!("Stitching: overlap index {}", overlap_index);
 
@@ -194,6 +165,17 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
     app.emit("capture-complete", base64_img).map_err(|e| e.to_string())?;
     
     Ok(())
+}
+
+fn toggle_window_visibility(app: &AppHandle, visible: bool) {
+    let windows = app.webview_windows();
+    for (_label, window) in windows {
+        if visible {
+            let _ = window.show();
+        } else {
+            let _ = window.hide();
+        }
+    }
 }
 
 fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage, String> {
