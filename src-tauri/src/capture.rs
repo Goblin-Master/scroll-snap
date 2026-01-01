@@ -1,4 +1,4 @@
-use screenshots::Screen;
+use xcap::Monitor;
 use image::{DynamicImage, ImageOutputFormat};
 use std::thread;
 use std::time::Duration;
@@ -62,12 +62,8 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
-    // Hide window briefly to ensure we capture the underlying content cleanly
-    // This is crucial for Windows/Linux compositors to expose the bottom layer
-    toggle_window_visibility(app, false);
-    thread::sleep(Duration::from_millis(10));
+    // With xcap, let's try WITHOUT hiding window first, but still using the shrunk area
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
-    toggle_window_visibility(app, true);
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -104,18 +100,14 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
-        // Hide window briefly to ensure we capture the underlying content cleanly
-        toggle_window_visibility(app, false);
-        thread::sleep(Duration::from_millis(10));
+        // We capture without hiding the window, because we are capturing inside the border
         let new_fragment = match capture_rect(x, y, width, height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
-                toggle_window_visibility(app, true);
                 break;
             }
         };
-        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
@@ -170,36 +162,53 @@ fn toggle_window_visibility(app: &AppHandle, visible: bool) {
 }
 
 fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage, String> {
-    let screens = Screen::all().map_err(|e| format!("Failed to get screens: {}", e))?;
+    let monitors = Monitor::all().map_err(|e| format!("Failed to get monitors: {}", e))?;
     
-    // Find the screen that contains the point (x, y)
-    // We assume x, y are Global Physical Coordinates
-    let screen = screens.iter().find(|s| {
-        let sx = s.display_info.x;
-        let sy = s.display_info.y;
-        let sw = s.display_info.width;
-        let sh = s.display_info.height;
+    // Find the monitor that contains the point (x, y)
+    let monitor = monitors.iter().find(|m| {
+        let mx = m.x();
+        let my = m.y();
+        let mw = m.width();
+        let mh = m.height();
         
-        // Check if the center of the rect is within this screen
+        // Check if the center of the rect is within this monitor
         let cx = x + (width as i32 / 2);
         let cy = y + (height as i32 / 2);
         
-        cx >= sx && cx < sx + sw as i32 && cy >= sy && cy < sy + sh as i32
-    }).or(screens.first()).ok_or("No screen found")?;
+        cx >= mx && cx < mx + mw as i32 && cy >= my && cy < my + mh as i32
+    }).or(monitors.first()).ok_or("No monitor found")?;
 
-    // Calculate relative coordinates within the screen
-    // Since x, y are already physical, we just subtract the screen's physical origin
-    let rx = x - screen.display_info.x;
-    let ry = y - screen.display_info.y;
+    // Shrink the capture area slightly (2px on each side) to avoid capturing the green border
+    // This is the core fix for "flickering" - we simply don't capture the border
+    let border_offset = 2;
     
-    // Width and height are also physical
-    let rw = width;
-    let rh = height;
+    // Calculate relative coordinates within the monitor
+    let rx = x - monitor.x() + border_offset;
+    let ry = y - monitor.y() + border_offset;
+    
+    // Adjust width/height for the offset
+    // Ensure we don't go negative or out of bounds
+    let rw = if width > (border_offset as u32 * 2) { width - (border_offset as u32 * 2) } else { width };
+    let rh = if height > (border_offset as u32 * 2) { height - (border_offset as u32 * 2) } else { height };
 
-    let image = screen.capture_area(rx, ry, rw, rh)
-        .map_err(|e| format!("Failed to capture area: {}", e))?;
+    // Use xcap's capture_area if available, or capture and crop
+    // xcap returns an image::RgbaImage directly
+    let image = monitor.capture_image()
+        .map_err(|e| format!("Failed to capture monitor: {}", e))?;
+    
+    // Crop the image
+    let img_width = image.width();
+    let img_height = image.height();
+    
+    let crop_x = if rx < 0 { 0 } else { rx as u32 };
+    let crop_y = if ry < 0 { 0 } else { ry as u32 };
+    let crop_w = if crop_x + rw > img_width { img_width - crop_x } else { rw };
+    let crop_h = if crop_y + rh > img_height { img_height - crop_y } else { rh };
+    
+    let mut dynamic_image = DynamicImage::ImageRgba8(image);
+    let cropped_image = dynamic_image.crop(crop_x, crop_y, crop_w, crop_h);
         
-    Ok(DynamicImage::ImageRgba8(image))
+    Ok(cropped_image)
 }
 
 fn image_to_base64(img: &DynamicImage) -> Result<String, String> {

@@ -17,7 +17,6 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-screenshots = "0.8"
 enigo = "0.2"
 image = "0.24"
 base64 = "0.21"
@@ -27,3 +26,4 @@ lazy_static = "1.5.0"
 tauri-plugin-dialog = "2.4.2"
 rdev = "0.5.3"
 device_query = "4.0.1"
+xcap = "0.8.1"
