@@ -26,3 +26,18 @@ pub fn copy_to_clipboard(base64_image: String) -> Result<(), String> {
     
     Ok(())
 }
+
+#[tauri::command]
+pub fn save_image(path: String, base64_image: String) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::Write;
+    
+    let b64 = base64_image.trim_start_matches("data:image/png;base64,");
+    let bytes = general_purpose::STANDARD.decode(b64)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+        
+    let mut file = File::create(path).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    
+    Ok(())
+}

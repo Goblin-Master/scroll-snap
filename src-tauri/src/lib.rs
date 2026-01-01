@@ -14,11 +14,23 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut| {
+            println!("Shortcut pressed: {:?}", shortcut);
+            if shortcut.matches(tauri_plugin_global_shortcut::Shortcut::parse("F9").unwrap()) {
+                 // Call stop capture
+                 println!("F9 pressed, stopping capture...");
+                 let _ = tauri::async_runtime::block_on(async {
+                     capture::stop_scroll_capture().await
+                 });
+            }
+        }).build())
         .invoke_handler(tauri::generate_handler![
             greet, 
             capture::start_scroll_capture,
             capture::stop_scroll_capture,
-            utils::copy_to_clipboard
+            utils::copy_to_clipboard,
+            utils::save_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

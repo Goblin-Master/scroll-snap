@@ -1,5 +1,6 @@
 import { useAppStore } from '../store';
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import { Download, Copy, X } from 'lucide-react';
 
 export const Editor = () => {
@@ -16,11 +17,47 @@ export const Editor = () => {
     }
   };
 
-  const handleSave = () => {
-    const link = document.createElement('a');
-    link.href = capturedImage;
-    link.download = `scrollsnap-${Date.now()}.png`;
-    link.click();
+  const handleSave = async () => {
+    try {
+        // Remove data:image/png;base64, prefix
+        const base64Data = capturedImage.split(',')[1];
+        
+        // Convert base64 to binary
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const path = await save({
+            filters: [{
+                name: 'Image',
+                extensions: ['png']
+            }],
+            defaultPath: `scrollsnap-${Date.now()}.png`
+        });
+
+        if (path) {
+            // Write file using tauri-plugin-fs
+            // We need to enable fs plugin in capabilities too? 
+            // Actually, `tauri-plugin-dialog` returns the path, but we need `tauri-plugin-fs` to write.
+            // Let's use invoke to write? No, plugin-fs is better.
+            // But wait, user only installed dialog plugin.
+            // Let's add `tauri-plugin-fs` too.
+            // Or just use a custom command `save_image(path, base64)`.
+            // Custom command is safer if we don't want to expose full FS access.
+            // But let's assume we can add FS plugin.
+            // Actually, we can use the `save` API? No, `save` just returns a path.
+            
+            // Let's implement a simple `save_image` command in Rust to avoid setting up FS permissions complexity for now.
+            // It's cleaner.
+            await invoke('save_image', { path, base64Image: capturedImage });
+            alert('Saved successfully!');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Failed to save: ' + e);
+    }
   };
 
   const handleClose = () => {
