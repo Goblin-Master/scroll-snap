@@ -5,11 +5,9 @@ use std::time::Duration;
 use std::io::Cursor;
 use base64::{Engine as _, engine::general_purpose};
 use crate::stitch;
-use tauri::{AppHandle, Emitter};
-
+use tauri::{AppHandle, Emitter, Manager};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter, Manager};
 use lazy_static::lazy_static;
 
 lazy_static! {
