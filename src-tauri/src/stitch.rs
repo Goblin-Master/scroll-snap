@@ -1,53 +1,97 @@
-use image::{DynamicImage, GenericImageView, Rgba, ImageBuffer, RgbaImage};
+use image::{DynamicImage, GenericImage, GenericImageView, Rgba};
 
 /// Calculate the overlap height between two images
-/// prev_img: The previous screenshot
-/// curr_img: The new screenshot after scrolling
+/// prev_img: The previous screenshot (we look at the bottom of this)
+/// curr_img: The new screenshot (we look at the top of this)
+/// Returns: The Y-coordinate in `curr_img` where the content starts to *differ* from `prev_img` bottom.
+///          Effectively, this is the height of the overlapping region in `curr_img`.
 pub fn calculate_overlap(prev_img: &DynamicImage, curr_img: &DynamicImage) -> u32 {
     let width = prev_img.width();
     let prev_height = prev_img.height();
     let curr_height = curr_img.height();
     
-    // We assume each scroll won't exceed 1/2 of screen height to reduce calculation
-    let scan_depth = prev_height / 2; 
+    // We only scan the top 50% of the new image to find where the previous image ended.
+    // If the user scrolled more than a screen height, we can't stitch anyway.
+    let scan_depth = (curr_height / 2).min(prev_height / 2);
 
+    // We use a large block for signature matching to avoid false positives with repeated patterns (like code lines).
+    // Let's use the bottom 20% of the previous image, or at least 50 pixels.
+    let signature_height = (prev_height / 5).max(50).min(prev_height);
+    let signature_start_y = prev_height - signature_height;
+    
     // Safety check
     if width == 0 || prev_height == 0 || curr_height == 0 {
         return 0;
     }
 
-    // Use a multi-row signature for robustness
-    // Take 10 rows from the bottom of prev_img for better signature
-    let signature_height = 10.min(prev_height);
-    let signature_start_y = prev_height - signature_height;
+    // Optimization: Instead of checking every pixel, we check a grid.
+    // If a candidate row matches, we do a full verify.
     
-    // Search for this signature in the top part of curr_img
+    // We search in `curr_img` for the start of the `signature` block.
+    // If `prev_img` bottom matches `curr_img` at offset `y`, then `y` is the start of the match.
+    // The overlap region in `curr_img` is from `0` to `y + signature_height`.
+    // Wait, let's trace:
+    // prev: [ ... A B C ] (C is bottom signature)
+    // curr: [ B C D ... ]
+    // We find C at `curr` offset `y`.
+    // Then `curr` rows 0..y are "B". "B" is also in `prev`.
+    // So the overlap is `curr` rows 0..(y + signature_height).
+    // The new content starts at `y + signature_height`.
+    
+    // We iterate `y` representing the top-shift of the signature in the new image.
     for y in 0..scan_depth {
+        // If the signature block would go out of bounds in curr_img, stop.
         if y + signature_height > curr_height {
             break;
         }
         
-        // Compare the signature block
-        if compare_blocks(prev_img, signature_start_y, curr_img, y, width, signature_height) {
-            // Found overlap!
-            return y + signature_height - 1;
+        // Fast check: Compare the first, middle, and last row of the signature block
+        if check_row_match(prev_img, signature_start_y, curr_img, y, width) &&
+           check_row_match(prev_img, signature_start_y + signature_height / 2, curr_img, y + signature_height / 2, width) &&
+           check_row_match(prev_img, signature_start_y + signature_height - 1, curr_img, y + signature_height - 1, width) 
+        {
+            // Potential match found, do strict full block comparison
+            if compare_blocks_strict(prev_img, signature_start_y, curr_img, y, width, signature_height) {
+                println!("Stitch Match: Found overlap at y={}, overlap height={}", y, y + signature_height);
+                return y + signature_height;
+            }
         }
     }
 
-    0 // No overlap found
+    // No match found
+    0
 }
 
-fn compare_blocks(img1: &DynamicImage, y1: u32, img2: &DynamicImage, y2: u32, width: u32, height: u32) -> bool {
-    let step = 2; // Check every 2nd pixel for higher accuracy
-    let tolerance = 20; // Increased tolerance slightly for anti-aliasing differences
+fn check_row_match(img1: &DynamicImage, y1: u32, img2: &DynamicImage, y2: u32, width: u32) -> bool {
+    let step = 10; // Check every 10th pixel for speed
+    let tolerance = 5; // Very strict tolerance
     
-    for h in 0..height {
-        for x in (0..width).step_by(step) {
+    for x in (0..width).step_by(step) {
+        let p1 = img1.get_pixel(x, y1);
+        let p2 = img2.get_pixel(x, y2);
+        if !pixels_are_similar(p1, p2, tolerance) {
+            return false;
+        }
+    }
+    true
+}
+
+fn compare_blocks_strict(img1: &DynamicImage, y1: u32, img2: &DynamicImage, y2: u32, width: u32, height: u32) -> bool {
+    let step = 2; // Check every 2nd pixel
+    let tolerance = 10; // Strict tolerance
+    let mut diff_count = 0;
+    let max_diff = (width * height / step / step) / 100; // Allow max 1% different pixels (noise)
+    
+    for h in (0..height).step_by(step as usize) {
+        for x in (0..width).step_by(step as usize) {
             let p1 = img1.get_pixel(x, y1 + h);
             let p2 = img2.get_pixel(x, y2 + h);
             
             if !pixels_are_similar(p1, p2, tolerance) {
-                return false;
+                diff_count += 1;
+                if diff_count > max_diff {
+                    return false;
+                }
             }
         }
     }
@@ -58,52 +102,38 @@ fn pixels_are_similar(p1: Rgba<u8>, p2: Rgba<u8>, tolerance: i32) -> bool {
     let r_diff = (p1[0] as i32 - p2[0] as i32).abs();
     let g_diff = (p1[1] as i32 - p2[1] as i32).abs();
     let b_diff = (p1[2] as i32 - p2[2] as i32).abs();
-    (r_diff + g_diff + b_diff) <= tolerance
+    
+    r_diff <= tolerance && g_diff <= tolerance && b_diff <= tolerance
 }
 
-/// Append new_img to base_img, skipping the first `overlap` rows of new_img
-pub fn append_image(base_img: &DynamicImage, new_img: &DynamicImage, overlap_index: u32) -> DynamicImage {
-    let base_width = base_img.width();
-    let base_height = base_img.height();
-    let new_width = new_img.width();
-    let new_height = new_img.height();
-
-    // The part of new_img to append starts from overlap_index + 1
-    // If overlap_index is the row that matched the last row of base_img.
-    // Then we skip 0..=overlap_index.
-    // So start_y = overlap_index + 1.
-    let start_y = overlap_index + 1;
+pub fn append_image(base: &DynamicImage, new_part: &DynamicImage, overlap_height: u32) -> DynamicImage {
+    let width = base.width();
+    let base_height = base.height();
+    let new_height = new_part.height();
     
-    if start_y >= new_height {
-        return base_img.clone();
+    // We only keep the part of `new_part` that is NOT in the overlap.
+    // overlap_height is the amount of pixels in `new_part` (from top) that duplicates `base`.
+    // So we want `new_part` from `overlap_height` to end.
+    
+    // Safety check
+    if overlap_height >= new_height {
+        // The entire new image is a duplicate? Return base.
+        return base.clone();
     }
-
-    let append_height = new_height - start_y;
-    let final_width = base_width.max(new_width);
+    
+    let append_height = new_height - overlap_height;
     let final_height = base_height + append_height;
 
-    let mut final_img: RgbaImage = ImageBuffer::new(final_width, final_height);
-
-    // Copy base image
-    // copy_from is available on GenericImage, but for DynamicImage we might need to be careful
-    // We can iterate or use sub_image (which might be slow).
-    // Let's copy pixel by pixel or use `copy_from` if compatible.
-    // DynamicImage implements GenericImage.
+    let mut final_img = DynamicImage::new_rgba8(width, final_height);
     
-    // Copy base
-    for y in 0..base_height {
-        for x in 0..base_width {
-            final_img.put_pixel(x, y, base_img.get_pixel(x, y));
-        }
-    }
-
-    // Copy new image (cropped)
-    for y in 0..append_height {
-        for x in 0..new_width {
-            let src_y = start_y + y;
-            final_img.put_pixel(x, base_height + y, new_img.get_pixel(x, src_y));
-        }
-    }
-
-    DynamicImage::ImageRgba8(final_img)
+    // Copy base image
+    let _ = final_img.copy_from(base, 0, 0);
+    
+    // Copy non-overlapping part of new image
+    // Source rect: x=0, y=overlap_height, w=width, h=append_height
+    // Dest: x=0, y=base_height
+    let crop = new_part.view(0, overlap_height, width, append_height);
+    let _ = final_img.copy_from(&crop, 0, base_height);
+    
+    final_img
 }
