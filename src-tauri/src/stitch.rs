@@ -133,7 +133,9 @@ pub fn append_image(base: &DynamicImage, new_part: &DynamicImage, overlap_height
     // Source rect: x=0, y=overlap_height, w=width, h=append_height
     // Dest: x=0, y=base_height
     let crop = new_part.view(0, overlap_height, width, append_height);
-    let _ = final_img.copy_from(&crop, 0, base_height);
+    // Convert SubImage to DynamicImage (ImageBuffer) to satisfy GenericImageView trait for copy_from
+    let crop_img = crop.to_image();
+    let _ = final_img.copy_from(&crop_img, 0, base_height);
     
     final_img
 }
