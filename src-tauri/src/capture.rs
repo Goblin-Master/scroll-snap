@@ -62,12 +62,8 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
-    // Hide window briefly to ensure we capture the underlying content cleanly
-    // This is crucial for Windows/Linux compositors to expose the bottom layer
-    toggle_window_visibility(app, false);
-    thread::sleep(Duration::from_millis(10));
+    // No need to hide window or shrink area, because WDA_EXCLUDEFROMCAPTURE handles it natively
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
-    toggle_window_visibility(app, true);
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -104,18 +100,14 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
-        // Hide window briefly to ensure we capture the underlying content cleanly
-        toggle_window_visibility(app, false);
-        thread::sleep(Duration::from_millis(10));
+        // No need to hide window
         let new_fragment = match capture_rect(x, y, width, height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
-                toggle_window_visibility(app, true);
                 break;
             }
         };
-        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
@@ -186,18 +178,15 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
         cx >= mx && cx < mx + mw as i32 && cy >= my && cy < my + mh as i32
     }).or(monitors.first()).ok_or("No monitor found")?;
 
-    // Shrink the capture area slightly (2px on each side) to avoid capturing the green border
-    // This is the core fix for "flickering" - we simply don't capture the border
-    let border_offset = 2;
+    // No shrinking needed anymore
     
     // Calculate relative coordinates within the monitor
-    let rx = x - monitor.x().unwrap_or(0) + border_offset;
-    let ry = y - monitor.y().unwrap_or(0) + border_offset;
+    let rx = x - monitor.x().unwrap_or(0);
+    let ry = y - monitor.y().unwrap_or(0);
     
-    // Adjust width/height for the offset
-    // Ensure we don't go negative or out of bounds
-    let rw = if width > (border_offset as u32 * 2) { width - (border_offset as u32 * 2) } else { width };
-    let rh = if height > (border_offset as u32 * 2) { height - (border_offset as u32 * 2) } else { height };
+    // Width and height
+    let rw = width;
+    let rh = height;
 
     // Use xcap's capture_area if available, or capture and crop
     // xcap returns an image::RgbaImage directly

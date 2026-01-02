@@ -27,3 +27,4 @@ tauri-plugin-dialog = "2.4.2"
 rdev = "0.5.3"
 device_query = "4.0.1"
 xcap = "0.8.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
