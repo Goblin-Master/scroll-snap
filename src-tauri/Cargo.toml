@@ -24,7 +24,8 @@ arboard = "3.2"
 tokio = { version = "1", features = ["full"] }
 lazy_static = "1.5.0"
 tauri-plugin-dialog = "2.4.2"
-rdev = "0.5.3"
 device_query = "4.0.1"
 xcap = "0.8.1"
+
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
