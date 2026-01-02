@@ -62,12 +62,8 @@ pub async fn stop_scroll_capture() -> Result<(), String> {
 
 fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, stop_flag: Arc<Mutex<bool>>) -> Result<(), String> {
     // 1. Initial Capture
-    // Hide window briefly to ensure we capture the underlying content cleanly
-    // This is crucial for Windows/Linux compositors to expose the bottom layer
-    toggle_window_visibility(app, false);
-    thread::sleep(Duration::from_millis(50));
+    // With WDA_EXCLUDEFROMCAPTURE and correct DPI scaling, we don't need to hide the window
     let mut full_image = capture_rect(x, y, width, height).map_err(|e| e.to_string())?;
-    toggle_window_visibility(app, true);
     
     // Allow up to 500 stitches (very long image)
     let max_stitches = 500; 
@@ -104,18 +100,14 @@ fn run_capture_loop(app: &AppHandle, x: i32, y: i32, width: u32, height: u32, st
         thread::sleep(Duration::from_millis(100));
         
         // 3. Capture new fragment
-        // Hide window briefly to ensure we capture the underlying content cleanly
-        toggle_window_visibility(app, false);
-        thread::sleep(Duration::from_millis(50));
+        // No need to hide window
         let new_fragment = match capture_rect(x, y, width, height) {
             Ok(img) => img,
             Err(e) => {
                 println!("Capture failed: {}", e);
-                toggle_window_visibility(app, true);
                 break;
             }
         };
-        toggle_window_visibility(app, true);
         
         // 4. Calculate overlap
         let overlap_index = stitch::calculate_overlap(&full_image, &new_fragment);
@@ -189,13 +181,31 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
     // No shrinking needed anymore
     
     // Calculate relative coordinates within the monitor
-    let rx = x - monitor.x().unwrap_or(0);
-    let ry = y - monitor.y().unwrap_or(0);
+    // IMPORTANT: xcap uses physical pixels, but Tauri often provides logical pixels.
+    // However, the `x` and `y` we get from Tauri's `start_scroll_capture` command 
+    // are usually physical coordinates if they come from `window.innerPosition` + `window.innerSize` 
+    // or if the frontend logic handles it.
+    // BUT, let's verify if `scale_factor` is needed.
+    // If the user's input `x, y, width, height` are Logical, we must multiply by `scale_factor`.
+    // Assuming they are Logical (CSS pixels) from the frontend overlay.
     
-    // Width and height
-    let rw = width;
-    let rh = height;
-
+    let scale_factor = monitor.scale_factor().unwrap_or(1.0);
+    
+    // Convert input (logical) to physical
+    // Note: We need to be careful. If the input IS physical, this double-scales.
+    // Let's assume input is Logical because it comes from a web frontend.
+    let phys_x = (x as f32 * scale_factor) as i32;
+    let phys_y = (y as f32 * scale_factor) as i32;
+    let phys_w = (width as f32 * scale_factor) as u32;
+    let phys_h = (height as f32 * scale_factor) as u32;
+    
+    // Now calculate relative to monitor
+    let mx = monitor.x().unwrap_or(0);
+    let my = monitor.y().unwrap_or(0);
+    
+    let rx = phys_x - mx;
+    let ry = phys_y - my;
+    
     // Use xcap's capture_area if available, or capture and crop
     // xcap returns an image::RgbaImage directly
     let image = monitor.capture_image()
@@ -207,8 +217,8 @@ fn capture_rect(x: i32, y: i32, width: u32, height: u32) -> Result<DynamicImage,
     
     let crop_x = if rx < 0 { 0 } else { rx as u32 };
     let crop_y = if ry < 0 { 0 } else { ry as u32 };
-    let crop_w = if crop_x + rw > img_width { img_width - crop_x } else { rw };
-    let crop_h = if crop_y + rh > img_height { img_height - crop_y } else { rh };
+    let crop_w = if crop_x + phys_w > img_width { img_width - crop_x } else { phys_w };
+    let crop_h = if crop_y + phys_h > img_height { img_height - crop_y } else { phys_h };
     
     let mut dynamic_image = DynamicImage::ImageRgba8(image);
     let cropped_image = dynamic_image.crop(crop_x, crop_y, crop_w, crop_h);
